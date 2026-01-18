@@ -12,11 +12,11 @@ import 'package:kitchenowl/platform/dart_html/dart_html.dart' as html;
 class AuthCubit extends Cubit<AuthState> {
   bool _forcedOfflineMode = false;
 
-  AuthCubit() : super(const Loading()) {
+  AuthCubit({reloadTokenBeforeRequest = kIsWeb}) : super(const Loading()) {
     ApiService.getInstance().addListener(updateState);
     ApiService.setTokenRotationHandler((token) =>
         SecureStorage.getInstance().write(key: 'TOKEN', value: token));
-    if (kIsWeb) {
+    if (reloadTokenBeforeRequest) {
       ApiService.setTokenBeforeReauthHandler((token) {
         if (token == null) return Future.value(token);
 
@@ -32,9 +32,7 @@ class AuthCubit extends Cubit<AuthState> {
   void setup() async {
     String? url;
     url = kIsWeb
-        ? kDebugMode
-            ? "http://localhost:5000"
-            : html.getBaseUri()
+        ? html.getBaseUri()
         : await PreferenceStorage.getInstance().read(key: 'URL') ??
             Config.defaultServer;
     final token = await SecureStorage.getInstance().read(key: 'TOKEN');
@@ -285,12 +283,15 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> _loadForcedOfflineMode() async {
-    _forcedOfflineMode = await PreferenceStorage.getInstance().readBool(key: 'forcedOfflineMode') ?? false;
+    _forcedOfflineMode = await PreferenceStorage.getInstance()
+            .readBool(key: 'forcedOfflineMode') ??
+        false;
   }
 
   void setForcedOfflineMode(bool forcedOfflineMode) async {
     _forcedOfflineMode = forcedOfflineMode;
-    await PreferenceStorage.getInstance().writeBool(key: 'forcedOfflineMode', value: forcedOfflineMode);
+    await PreferenceStorage.getInstance()
+        .writeBool(key: 'forcedOfflineMode', value: forcedOfflineMode);
     // Always update state to reflect the change immediately
     updateState();
     if (!forcedOfflineMode) {
@@ -304,6 +305,8 @@ abstract class AuthState extends Equatable {
   const AuthState();
 
   bool get forcedOfflineMode => false;
+
+  bool get isOffline => forcedOfflineMode;
 }
 
 class Authenticated extends AuthState {
@@ -325,6 +328,9 @@ class AuthenticatedOffline extends Authenticated {
 
   @override
   bool get forcedOfflineMode => _forcedOfflineMode;
+
+  @override
+  bool get isOffline => true;
 }
 
 class Onboarding extends AuthState {

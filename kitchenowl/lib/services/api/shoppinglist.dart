@@ -16,6 +16,7 @@ extension ShoppinglistApi on ApiService {
     ShoppinglistSorting sorting = ShoppinglistSorting.alphabetical,
     int recentItemlimit = 9,
   }) async {
+    recentItemlimit = recentItemlimit > 120 ? 120 : recentItemlimit;
     final res = await get(route(household: household) +
         "?orderby=${sorting.index}&recent_limit=${recentItemlimit}");
     if (res.statusCode != 200) return null;
@@ -138,19 +139,19 @@ extension ShoppinglistApi on ApiService {
     return res.statusCode == 200;
   }
 
-  void onShoppinglistAdd(dynamic Function(dynamic) handler){
+  void onShoppinglistAdd(dynamic Function(dynamic) handler) {
     socket.on("shoppinglist:add", handler);
   }
 
-  void offShoppinglistAdd(dynamic Function(dynamic) handler){
+  void offShoppinglistAdd(dynamic Function(dynamic) handler) {
     socket.off("shoppinglist:add", handler);
   }
 
-  void onShoppinglistDelete(dynamic Function(dynamic) handler){
+  void onShoppinglistDelete(dynamic Function(dynamic) handler) {
     socket.on("shoppinglist:delete", handler);
   }
 
-  void offShoppinglistDelete(dynamic Function(dynamic) handler){
+  void offShoppinglistDelete(dynamic Function(dynamic) handler) {
     socket.off("shoppinglist:delete", handler);
   }
 

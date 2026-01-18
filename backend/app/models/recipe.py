@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 Model = db.Model
 if TYPE_CHECKING:
-    from app.models import Household, RecipeHistory, File
+    from app.models import Household, RecipeHistory, File, Report
     from app.helpers.db_model_base import DbModelBase
 
     Model = DbModelBase
@@ -58,6 +58,12 @@ class Recipe(Model, DbModelAuthorizeMixin):
     visibility: Mapped[RecipeVisibility] = db.Column(
         db.Enum(RecipeVisibility), nullable=False, default=RecipeVisibility.PRIVATE
     )
+
+    # Server suggestion metrics
+    server_curated: Mapped[bool] = db.Column(db.Boolean, default=False)
+    server_scrapes: Mapped[int] = db.Column(db.Integer, default=0)
+
+    # Internal meal planner suggestion score and rank
     suggestion_score: Mapped[int] = db.Column(db.Integer, server_default="0")
     suggestion_rank: Mapped[int] = db.Column(db.Integer, server_default="0")
     household_id: Mapped[int] = db.Column(
@@ -118,6 +124,14 @@ class Recipe(Model, DbModelAuthorizeMixin):
         ),
     )
 
+    reports: Mapped[List["Report"]] = cast(
+        Mapped[List["Report"]],
+        db.relationship(
+            "Report",
+            back_populates="recipe",
+        ),
+    )
+
     def obj_to_dict(
         self,
         skip_columns: list[str] | None = None,
@@ -163,6 +177,8 @@ class Recipe(Model, DbModelAuthorizeMixin):
                 "planned_days",
                 "planned_cooking_dates",
                 "planned",
+                "suggestion_score",
+                "suggestion_rank",
             ]
         )
         return res

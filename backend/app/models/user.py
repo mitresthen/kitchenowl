@@ -4,7 +4,7 @@ from flask_jwt_extended import current_user
 from app import db
 from app.config import bcrypt
 from sqlalchemy.orm import Mapped
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, func
 from datetime import datetime, timezone
 
 Model = db.Model
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         File,
         OIDCLink,
         OIDCRequest,
+        Report,
     )
     from app.helpers.db_model_base import DbModelBase
 
@@ -130,6 +131,23 @@ class User(Model):
         ),
     )
 
+    created_reports: Mapped[List["Report"]] = cast(
+        Mapped[List["Report"]],
+        db.relationship(
+            "Report",
+            foreign_keys="[Report.created_by_id]",
+            back_populates="created_by",
+        ),
+    )
+    reports: Mapped[List["Report"]] = cast(
+        Mapped[List["Report"]],
+        db.relationship(
+            "Report",
+            foreign_keys="[Report.user_id]",
+            back_populates="user",
+        ),
+    )
+
     def check_password(self, password: str) -> bool:
         return bool(self.password) and bcrypt.check_password_hash(
             self.password, password
@@ -220,15 +238,12 @@ class User(Model):
 
     @classmethod
     def search_name(cls, name: str) -> list[Self]:
-        if "*" in name or "_" in name:
-            looking_for = name.replace("_", "__").replace("*", "%").replace("?", "_")
-        else:
-            looking_for = "%{0}%".format(name)
+        looking_for = f"%{name.replace('*', '*' * 2).replace('%', '*' + '%').replace('_', '*' + '_')}%"
         return (
             cls.query.filter(
                 cls.name.ilike(looking_for) | cls.username.ilike(looking_for)
             )
-            .order_by(cls.name)
+            .order_by(func.char_length(cls.username))
             .limit(15)
             .all()
         )

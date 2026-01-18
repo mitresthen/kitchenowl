@@ -19,6 +19,7 @@ from app.config import (
     jwt,
     OPEN_REGISTRATION,
     DISABLE_USERNAME_PASSWORD_LOGIN,
+    OIDC_RFC_COMPLIANT_REDIRECT,
     oidc_clients,
 )
 
@@ -59,6 +60,35 @@ if not DISABLE_USERNAME_PASSWORD_LOGIN:
     @auth.route("", methods=["POST"])
     @validate_args(Login)
     def login(args):
+        """Authenticate user with username/email and password.
+        ---
+        post:
+          summary: User login
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: Login
+          responses:
+            200:
+              description: Authentication successful
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      access_token:
+                        type: string
+                      refresh_token:
+                        type: string
+                      user:
+                        type: object
+            401:
+              description: Invalid credentials
+            400:
+              description: Validation error
+          security: []
+        """
         username = args["username"].lower().replace(" ", "")
         user = None
         if "@" not in username:
@@ -68,7 +98,7 @@ if not DISABLE_USERNAME_PASSWORD_LOGIN:
 
         if not user or not user.check_password(args["password"]):
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp with wrong username or password".format(
+                message="Unauthorized: IP {} login attempt with wrong username or password".format(
                     getClientIp()
                 )
             )
@@ -96,6 +126,33 @@ if OPEN_REGISTRATION and not DISABLE_USERNAME_PASSWORD_LOGIN:
     @auth.route("signup", methods=["POST"])
     @validate_args(Signup)
     def signup(args):
+        """Register new user account.
+        ---
+        post:
+          summary: User registration
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: Signup
+          responses:
+            200:
+              description: Registration successful
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      access_token:
+                        type: string
+                      refresh_token:
+                        type: string
+                      user:
+                        type: object
+            400:
+              description: Invalid username/email
+          security: []
+        """
         username = args["username"].lower().replace(" ", "").replace("@", "")
         user = User.find_by_username(username)
         if user:
@@ -140,6 +197,29 @@ if OPEN_REGISTRATION and not DISABLE_USERNAME_PASSWORD_LOGIN:
 @auth.route("/refresh", methods=["GET"])
 @jwt_required(refresh=True)
 def refresh():
+    """Refresh access token using valid refresh token.
+    ---
+    get:
+      summary: Token refresh
+      responses:
+        200:
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  user:
+                    type: object
+        401:
+          description: Invalid refresh token
+      security:
+        - bearerRefreshToken: []
+    """
     user = current_user
     if not user:
         raise UnauthorizedRequest(
@@ -170,6 +250,32 @@ def refresh():
 @auth.route("<int:id>", methods=["DELETE"])
 @jwt_required()
 def logout(id):
+    """Revoke authentication token(s).
+    ---
+    delete:
+      summary: User logout
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: false
+          description: "Token ID to revoke (default: current token)"
+      responses:
+        200:
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg:
+                    type: string
+        401:
+          description: Unauthorized
+      security:
+        - bearerAuth: []
+    """
     if id:
         token = Token.find_by_id(id)
     else:
@@ -192,6 +298,30 @@ def logout(id):
 @jwt_required()
 @validate_args(CreateLongLivedToken)
 def createLongLivedToken(args):
+    """Generate long-lived authentication token.
+    ---
+    post:
+      summary: Create long-lived token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: CreateLongLivedToken
+      responses:
+        200:
+          description: Token created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  longlived_token:
+                    type: string
+        401:
+          description: Unauthorized
+      security:
+        - bearerAuth: []
+    """
     user = current_user
     if not user:
         raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
@@ -204,6 +334,32 @@ def createLongLivedToken(args):
 @auth.route("llt/<int:id>", methods=["DELETE"])
 @jwt_required()
 def deleteLongLivedToken(id):
+    """Revoke long-lived token by ID.
+    ---
+    delete:
+      summary: Delete long-lived token
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: Token ID to revoke
+      responses:
+        200:
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg:
+                    type: string
+        401:
+          description: Unauthorized
+      security:
+        - bearerAuth: []
+    """
     user = current_user
     if not user:
         raise UnauthorizedRequest(message="Unauthorized: IP {}".format(getClientIp()))
@@ -223,6 +379,43 @@ if FRONT_URL and len(oidc_clients) > 0:
     @jwt_required(optional=True)
     @validate_args(GetOIDCLoginUrl)
     def getOIDCLoginUrl(args):
+        """Generate OIDC authentication URL.
+        ---
+        get:
+          summary: OIDC login initiation
+          parameters:
+            - in: query
+              name: provider
+              schema:
+                type: string
+              required: false
+              description: OIDC provider name
+            - in: query
+              name: kitchenowl_scheme
+              schema:
+                type: string
+              required: false
+              description: Custom scheme for redirect
+          responses:
+            200:
+              description: OIDC URL generated
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      login_url:
+                        type: string
+                      state:
+                        type: string
+                      nonce:
+                        type: string
+            404:
+              description: Provider not found
+          security:
+            - bearerAuth: []
+            - {}
+        """
         provider = args["provider"] if "provider" in args else "custom"
         if provider not in oidc_clients:
             raise NotFoundRequest()
@@ -236,7 +429,7 @@ if FRONT_URL and len(oidc_clients) > 0:
         state = rndstr()
         nonce = rndstr()
         redirect_uri = (
-            "kitchenowl://"
+            ("kitchenowl:" + ("" if OIDC_RFC_COMPLIANT_REDIRECT else "//"))
             if "kitchenowl_scheme" in args and args["kitchenowl_scheme"]
             else FRONT_URL
         ) + "/signin/redirect"
@@ -264,11 +457,45 @@ if FRONT_URL and len(oidc_clients) > 0:
     @jwt_required(optional=True)
     @validate_args(LoginOIDC)
     def loginWithOIDC(args):
+        """Handle OIDC authentication callback.
+        ---
+        post:
+          summary: OIDC login completion
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: LoginOIDC
+          responses:
+            200:
+              description: OIDC authentication successful
+              content:
+                application/json:
+                  schema:
+                    oneOf:
+                      - type: object
+                        properties:
+                          access_token:
+                            type: string
+                          refresh_token:
+                            type: string
+                      - type: object
+                        properties:
+                          msg:
+                            type: string
+            400:
+              description: Invalid linking request
+            401:
+              description: OIDC authentication failed
+          security:
+            - bearerAuth: []
+            - {}
+        """
         # Validate oidc login
         oidc_request = OIDCRequest.find_by_state(args["state"])
         if not oidc_request:
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp with unknown OIDC state".format(
+                message="Unauthorized: IP {} login attempt with unknown OIDC state".format(
                     getClientIp()
                 )
             )
@@ -277,7 +504,7 @@ if FRONT_URL and len(oidc_clients) > 0:
         if not client:
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp with unknown OIDC provider".format(
+                message="Unauthorized: IP {} login attempt with unknown OIDC provider".format(
                     getClientIp()
                 )
             )
@@ -287,7 +514,7 @@ if FRONT_URL and len(oidc_clients) > 0:
                 return "Request invalid: user not signed in for link request", 400
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp for a different account".format(
+                message="Unauthorized: IP {} login attempt for a different account".format(
                     getClientIp()
                 )
             )
@@ -310,14 +537,14 @@ if FRONT_URL and len(oidc_clients) > 0:
         if isinstance(tokenResponse, ErrorResponse):
             oidc_request.delete()
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp for OIDC failed".format(
+                message="Unauthorized: IP {} login attempt for OIDC failed".format(
                     getClientIp()
                 )
             )
         userinfo = tokenResponse["id_token"]
         if userinfo["nonce"] != oidc_request.nonce:
             raise UnauthorizedRequest(
-                message="Unauthorized: IP {} login attemp for OIDC failed: mismatched nonce".format(
+                message="Unauthorized: IP {} login attempt for OIDC failed: mismatched nonce".format(
                     getClientIp()
                 )
             )
@@ -334,7 +561,7 @@ if FRONT_URL and len(oidc_clients) > 0:
             if oidcLink:
                 return jsonify({"msg": "DONE"})
 
-            if provider in map(lambda l: l.provider, current_user.oidc_links):
+            if provider in map(lambda links: links.provider, current_user.oidc_links):
                 return "Request invalid: provider already linked with account", 400
 
             oidcLink = OIDCLink(
@@ -374,10 +601,14 @@ if FRONT_URL and len(oidc_clients) > 0:
                     if "email_verified" in userinfo
                     else False
                 ),
-                photo=file_has_access_or_download(userinfo["picture"])
-                if "picture" in userinfo
-                else None,
             ).save()
+            if "picture" in userinfo:
+                newUser.photo = file_has_access_or_download(
+                    userinfo["picture"],
+                    user=newUser,
+                )
+                newUser.save()
+
             oidcLink = OIDCLink(
                 sub=userinfo["sub"], provider=provider, user_id=newUser.id
             ).save()
